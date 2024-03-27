@@ -1,13 +1,11 @@
 use crate::{
     db::{self, OccupyData},
+    paginate,
     structs::{OrePoint, OreType},
 };
 use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
-use poise::{
-    serenity_prelude::{Colour, CreateEmbed, User},
-    CreateReply,
-};
+use poise::serenity_prelude::User;
 use std::borrow::Cow;
 
 #[derive(Clone)]
@@ -16,46 +14,6 @@ pub(crate) struct Data {
 }
 
 type Context<'a> = poise::Context<'a, Data, Error>;
-
-#[poise::command(slash_command, rename = "礦點")]
-#[doc = "列出所有的礦點"]
-pub async fn list(ctx: Context<'_>) -> Result<()> {
-    let guild_id = ctx.guild_id().context("err")?;
-    let mut embed = CreateEmbed::default().title("所有礦點").color(Colour::BLUE);
-    let user_data = db::list_by_guild_id(&ctx.data().pool, guild_id.get()).await?;
-    for t in OreType::iter() {
-        let field_name = t.name;
-
-        // 縮進
-        let mut ore_list = vec![Cow::Borrowed(">>> ")];
-
-        // 印出每個礦點
-        for p in OrePoint::iter().filter(|x| t.id == x.ore_type) {
-            let occupy_user = user_data
-                .iter()
-                .find(|data| data.ore_point_id == p.id)
-                .map_or(Cow::Borrowed(""), |data| {
-                    let user_id = format!("占領者: <@{}>\n", data.user_id);
-                    let due_time = format!("佔領期限: <t:{}:F>\n", data.due_time.timestamp());
-                    let battle_user = if let Some(battle_uid) = data.battle_user_id {
-                        format!("<@{}> 已發起挑戰\n", battle_uid)
-                    } else {
-                        String::new()
-                    };
-                    format!("{}{}{}", user_id, due_time, battle_user).into()
-                });
-
-            ore_list.push(format!("{}\n({}, {})\n{}\n", p.name, p.x, p.y, occupy_user).into())
-        }
-
-        let embed_msg: String = ore_list.into_iter().collect();
-
-        embed = embed.field(field_name, embed_msg, false);
-    }
-    let reply_builder = CreateReply::default().reply(true).embed(embed);
-    ctx.send(reply_builder).await?;
-    Ok(())
-}
 
 #[poise::command(slash_command, rename = "佔領")]
 #[doc = "佔領一座的礦點"]
@@ -161,4 +119,69 @@ pub async fn force_occupy(
     ))
     .await?;
     return Ok(());
+}
+
+#[poise::command(slash_command, rename = "礦點")]
+#[doc = "列出所有的礦點"]
+pub async fn list(ctx: Context<'_>) -> Result<()> {
+    let guild_id = ctx.guild_id().context("err")?;
+    // let mut embed = CreateEmbed::default().title("所有礦點").color(Colour::BLUE);
+    let user_data = db::list_by_guild_id(&ctx.data().pool, guild_id.get()).await?;
+
+    let mut pages = Vec::<String>::new();
+
+    let mut current_page = Vec::<String>::new();
+
+    let mut current_page_item_count = 0;
+
+    let item_per_page = 5;
+
+    for t in OreType::iter() {
+        // 印出每個礦點
+        for p in OrePoint::iter().filter(|x| t.id == x.ore_type) {
+            let occupy_user = user_data
+                .iter()
+                .find(|data| data.ore_point_id == p.id)
+                .map_or(Cow::Borrowed(""), |data| {
+                    let user_id = format!("占領者: <@{}>\n", data.user_id);
+                    let due_time = format!("佔領期限: <t:{}:F>\n", data.due_time.timestamp());
+                    let battle_user = if let Some(battle_uid) = data.battle_user_id {
+                        format!("<@{}> 已發起挑戰\n", battle_uid)
+                    } else {
+                        String::new()
+                    };
+                    format!("{}{}{}", user_id, due_time, battle_user).into()
+                });
+
+            current_page.push(format!(
+                "<{}> {} ({}, {})\n{}\n",
+                t.emoji, p.name, p.x, p.y, occupy_user
+            ));
+            current_page_item_count += 1;
+            if current_page_item_count >= item_per_page {
+                pages.push(current_page.into_iter().collect());
+                current_page = Vec::new();
+                current_page_item_count = 0;
+            }
+        }
+        if current_page_item_count > 0 {
+            pages.push(current_page.into_iter().collect());
+            current_page = Vec::new();
+            current_page_item_count = 0;
+        }
+    }
+    if current_page_item_count > 0 {
+        pages.push(current_page.into_iter().collect());
+    }
+
+    let total_pages = pages.len();
+
+    for (i, page) in pages.iter_mut().enumerate() {
+        let page_str = format!("**{}/{}**", i + 1, total_pages);
+        page.push_str(&page_str)
+    }
+
+    paginate::paginate_reply(ctx, &pages.iter().map(|s| s.as_str()).collect::<Vec<_>>()).await?;
+
+    Ok(())
 }

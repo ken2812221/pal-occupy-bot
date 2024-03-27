@@ -9,6 +9,7 @@ use crate::db;
 pub(crate) struct OreType {
     pub id: i32,
     pub name: String,
+    pub emoji: String
 }
 
 #[derive(Clone, Debug, FromRow)]

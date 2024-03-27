@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 mod commands;
 mod db;
 mod structs;
+mod paginate;
 
 struct BotService {
     client: serenity::Client,
