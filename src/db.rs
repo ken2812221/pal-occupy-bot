@@ -71,13 +71,13 @@ pub async fn occupy(pool: &PgPool, data: OccupyData) -> Result<(), sqlx::Error> 
 }
 
 pub async fn get_ore_types(pool: &PgPool) -> Result<Vec<OreType>, sqlx::Error> {
-    sqlx::query_as("SELECT * FROM ore_type")
+    sqlx::query_as("SELECT * FROM ore_type ORDER BY id")
         .fetch_all(pool)
         .await
 }
 
 pub async fn get_ore_points(pool: &PgPool) -> Result<Vec<OrePoint>, sqlx::Error> {
-    sqlx::query_as("SELECT * FROM ore_point")
+    sqlx::query_as("SELECT * FROM ore_point ORDER BY id")
         .fetch_all(pool)
         .await
 }
@@ -88,7 +88,7 @@ pub async fn has_occupy_type(
     user_id: u64,
     ore_type: i32,
 ) -> Result<bool, sqlx::Error> {
-    let row = sqlx::query("SELECT * FROM occupy_table INNER JOIN ore_point ON occupy_table.ore_point_id = ore_point.id WHERE guild_id = $1 AND ( user_id = $2 OR battle_user_id = $2 ) AND ore_type = $3 LIMIT 1")
+    let row = sqlx::query("SELECT * FROM occupy_table INNER JOIN ore_point ON occupy_table.ore_point_id = ore_point.id WHERE guild_id = $1 AND ( user_id = $2 OR battle_user_id = $2 ) AND ((ore_type & $3) <> 0) LIMIT 1")
         .bind(guild_id as i64)
         .bind(user_id as i64)
         .bind(ore_type)

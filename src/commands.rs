@@ -136,35 +136,35 @@ pub async fn list(ctx: Context<'_>) -> Result<()> {
 
     let item_per_page = 5;
 
-    for t in OreType::iter() {
-        // 印出每個礦點
-        for p in OrePoint::iter().filter(|x| t.id == x.ore_type) {
-            let occupy_user = user_data
-                .iter()
-                .find(|data| data.ore_point_id == p.id)
-                .map_or(Cow::Borrowed(""), |data| {
-                    let user_id = format!("占領者: <@{}>\n", data.user_id);
-                    let due_time = format!("佔領期限: <t:{}:F>\n", data.due_time.timestamp());
-                    let battle_user = if let Some(battle_uid) = data.battle_user_id {
-                        format!("<@{}> 已發起挑戰\n", battle_uid)
-                    } else {
-                        String::new()
-                    };
-                    format!("{}{}{}", user_id, due_time, battle_user).into()
-                });
+    // 印出每個礦點
+    for p in OrePoint::iter() {
+        let occupy_user = user_data
+            .iter()
+            .find(|data| data.ore_point_id == p.id)
+            .map_or(Cow::Borrowed(""), |data| {
+                let user_id = format!("占領者: <@{}>\n", data.user_id);
+                let due_time = format!("佔領期限: <t:{}:F>\n", data.due_time.timestamp());
+                let battle_user = if let Some(battle_uid) = data.battle_user_id {
+                    format!("<@{}> 已發起挑戰\n", battle_uid)
+                } else {
+                    String::new()
+                };
+                format!("{}{}{}", user_id, due_time, battle_user).into()
+            });
 
-            current_page.push(format!(
-                "<{}> {} ({}, {})\n{}\n",
-                t.emoji, p.name, p.x, p.y, occupy_user
-            ));
-            current_page_item_count += 1;
-            if current_page_item_count >= item_per_page {
-                pages.push(current_page.into_iter().collect());
-                current_page = Vec::new();
-                current_page_item_count = 0;
-            }
-        }
-        if current_page_item_count > 0 {
+        current_page.push(format!(
+            "{} {} ({}, {})\n{}\n",
+            OreType::iter()
+                .filter(|ore_type| (ore_type.id & p.ore_type) != 0)
+                .map(|ore_type| format!("<{}>", ore_type.emoji))
+                .collect::<String>(),
+            p.name,
+            p.x,
+            p.y,
+            occupy_user
+        ));
+        current_page_item_count += 1;
+        if current_page_item_count >= item_per_page {
             pages.push(current_page.into_iter().collect());
             current_page = Vec::new();
             current_page_item_count = 0;
