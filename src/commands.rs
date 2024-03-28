@@ -1,5 +1,7 @@
 use crate::{
-    db::{self, OccupyData}, list, structs::OrePoint
+    db::{self, OccupyData},
+    list,
+    structs::OrePoint,
 };
 use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
@@ -23,7 +25,7 @@ pub async fn occupy(
     let guild_id = ctx.guild_id().context("Missing guild id")?.get();
     let user_id = ctx.author().id.get();
     let pool = &ctx.data().pool;
-    
+
     let point = OrePoint::iter()
         .find(|p| p.id == point_id)
         .context("找不到礦點")?;
@@ -81,7 +83,10 @@ pub async fn occupy(
             trans.commit().await?;
             ctx.reply(format!(
                 "已佔領 {} {} ({}, {})\n",
-                point.emoji(), point.name, point.x, point.y
+                point.emoji(),
+                point.name,
+                point.x,
+                point.y
             ))
             .await?;
             Ok(())
@@ -121,7 +126,11 @@ pub async fn force_occupy(
     db::force_occupy(pool, data).await?;
     ctx.reply(format!(
         "<@{}> 已佔領 {} {} ({}, {})\n",
-        user_id, point.emoji(), point.name, point.x, point.y
+        user_id,
+        point.emoji(),
+        point.name,
+        point.x,
+        point.y
     ))
     .await?;
     Ok(())
@@ -129,11 +138,19 @@ pub async fn force_occupy(
 
 #[poise::command(slash_command, rename = "礦點")]
 #[doc = "列出所有的礦點"]
-pub async fn list(ctx: Context<'_>) -> Result<()> {
+pub async fn list(
+    ctx: Context<'_>,
+    #[min = 1]
+    #[max = 20]
+    #[rename = "每頁礦點數量"]
+    #[description = "每頁礦點數量"]
+    page_size: Option<u32>,
+) -> Result<()> {
     let pool = &ctx.data().pool;
     let guild_id = ctx.guild_id().context("err")?.get();
+    let page_size = page_size.unwrap_or(5);
 
-    let content = list::list(pool, guild_id, 0).await?;
+    let content = list::list(pool, guild_id, 0, page_size).await?;
 
     let reply = CreateReply::default()
         .embed(content.embed)

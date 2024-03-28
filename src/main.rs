@@ -4,7 +4,7 @@ use poise::serenity_prelude::{
     CreateInteractionResponseMessage, FullEvent, GatewayIntents, Interaction,
 };
 use shuttle_runtime::{self, Error as ShuttleError, SecretStore, Service};
-use std::net::SocketAddr;
+use std::{net::SocketAddr, num::ParseIntError};
 use structs::OrePoint;
 mod commands;
 mod db;
@@ -58,16 +58,21 @@ async fn main(
                         interaction: Interaction::Component(c),
                     } = event
                     {
-                        let page = c
+                        let (page_index, page_size): (u32, u32) = c
                             .data
                             .custom_id
                             .strip_prefix("list:")
-                            .and_then(|x| x.parse::<u32>().ok())
+                            .and_then(|x| x.split_once(':'))
+                            .and_then(|(a, b)| {
+                                (|| -> Result<_, ParseIntError> { Ok((a.parse()?, b.parse()?)) })()
+                                    .ok()
+                            })
                             .context("parse custom_id error")?;
                         let content = list::list(
                             &data.pool,
                             c.guild_id.context("Unknown guild_id")?.get(),
-                            page,
+                            page_index,
+                            page_size,
                         )
                         .await?;
                         c.create_response(
@@ -77,7 +82,8 @@ async fn main(
                                     .embed(content.embed)
                                     .components(content.component),
                             ),
-                        ).await?;
+                        )
+                        .await?;
                     }
                     Ok(())
                 })

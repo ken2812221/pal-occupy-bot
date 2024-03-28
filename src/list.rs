@@ -5,18 +5,16 @@ use poise::serenity_prelude::{
 };
 use sqlx::PgPool;
 
-const PAGE_SIZE: u32 = 5;
-
 pub struct ListContent {
     pub embed: CreateEmbed,
     pub component: Vec<CreateActionRow>,
 }
 
-pub async fn list(pool: &PgPool, guild_id: u64, page_index: u32) -> Result<ListContent, Error> {
-    let start = PAGE_SIZE * page_index;
+pub async fn list(pool: &PgPool, guild_id: u64, page_index: u32, page_size: u32) -> Result<ListContent, Error> {
+    let start = page_size * page_index;
 
-    let max_page = db::get_point_count(pool).await?.div_ceil(PAGE_SIZE);
-    let data = db::get_point_data(pool, guild_id, start, PAGE_SIZE).await?;
+    let max_page = db::get_point_count(pool).await?.div_ceil(page_size);
+    let data = db::get_point_data(pool, guild_id, start, page_size).await?;
 
     let content = data
         .into_iter()
@@ -46,12 +44,12 @@ pub async fn list(pool: &PgPool, guild_id: u64, page_index: u32) -> Result<ListC
 
     let buttons = CreateActionRow::Buttons(vec![
         if page_index > 0 {
-            CreateButton::new(format!("list:{}", page_index - 1))
+            CreateButton::new(format!("list:{}:{}", page_index - 1, page_size))
         } else {
             CreateButton::new("0").disabled(true)
         }.emoji('◀'),
         if page_index + 1 < max_page {
-            CreateButton::new(format!("list:{}", page_index + 1))
+            CreateButton::new(format!("list:{}:{}", page_index + 1, page_size))
         } else {
             CreateButton::new("0").disabled(true)
         }.emoji('▶'),
