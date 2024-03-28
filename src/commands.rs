@@ -46,7 +46,7 @@ pub async fn occupy(
 
             if data.due_time > Utc::now() {
                 // 佔領期限未到
-                ctx.reply("礦點已被佔領").await?;
+                ctx.reply(format!("礦點已被佔領，可於 <t:{}:F> 後發起挑戰", data.due_time.timestamp())).await?;
                 return Ok(());
             }
 
