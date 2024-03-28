@@ -57,7 +57,7 @@ pub async fn paginate_reply<U, E>(
             .components(vec![components])
             .reply(true)
     };
-    ctx.send(reply).await?;
+    let handle = ctx.send(reply).await?;
 
     // Loop through incoming interactions with the navigation buttons
     let mut current_page = 0;
@@ -65,8 +65,8 @@ pub async fn paginate_reply<U, E>(
         // We defined our button IDs to start with `ctx_id`. If they don't, some other command's
         // button was pressed
         .filter(move |press| press.data.custom_id.starts_with(&ctx_id.to_string()))
-        // Timeout when no navigation button has been pressed for 24 hours
-        .timeout(std::time::Duration::from_secs(3600 * 24))
+        // Timeout when no navigation button has been pressed for 1 hours
+        .timeout(std::time::Duration::from_secs(3600))
         .await
     {
         // Depending on which button was pressed, go to next or previous page
@@ -96,6 +96,8 @@ pub async fn paginate_reply<U, E>(
             )
             .await?;
     }
+
+    handle.delete(ctx).await?;
 
     Ok(())
 }

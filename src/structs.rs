@@ -1,15 +1,12 @@
-use once_cell::sync::OnceCell;
-use poise::{ChoiceParameter, CommandParameterChoice};
-use sqlx::{prelude::FromRow, PgPool};
-use std::collections::HashMap;
-
 use crate::db;
+use once_cell::sync::OnceCell;
+use sqlx::{prelude::FromRow, PgPool};
 
 #[derive(PartialEq, Eq, Clone, Debug, FromRow)]
 pub(crate) struct OreType {
     pub id: i32,
     pub name: String,
-    pub emoji: String
+    pub emoji: String,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -21,8 +18,8 @@ pub(crate) struct OrePoint {
     pub name: String,
 }
 
-pub static ORE_POINTS: OnceCell<Vec<OrePoint>> = OnceCell::new();
-pub static ORE_TYPES: OnceCell<Vec<OreType>> = OnceCell::new();
+static ORE_POINTS: OnceCell<Vec<OrePoint>> = OnceCell::new();
+static ORE_TYPES: OnceCell<Vec<OreType>> = OnceCell::new();
 
 impl OrePoint {
     async fn init(pool: &PgPool) {
@@ -41,6 +38,13 @@ impl OrePoint {
             .iter()
             .cloned()
     }
+
+    pub fn emoji(&self) -> String {
+        OreType::iter()
+            .filter(|ore_type| (ore_type.id & self.ore_type) != 0)
+            .map(|ore_type| format!("<{}>", ore_type.emoji))
+            .collect::<String>()
+    }
 }
 
 impl OreType {
@@ -49,43 +53,8 @@ impl OreType {
         ORE_TYPES.set(data).expect("ORE_TYPES set more than once.");
     }
 
-    pub fn iter() -> impl Iterator<Item = Self> {
-        ORE_TYPES
-            .get()
-            .expect("ORE_TYPES not initialize")
-            .iter()
-            .cloned()
-    }
-}
-
-impl ChoiceParameter for OrePoint {
-    fn list() -> Vec<CommandParameterChoice> {
-        OrePoint::iter()
-            .map(|ore_point| CommandParameterChoice {
-                name: format!("{} ({}, {})", ore_point.name, ore_point.x, ore_point.y),
-                localizations: HashMap::new(),
-                __non_exhaustive: (),
-            })
-            .collect()
-    }
-
-    fn from_index(index: usize) -> Option<Self> {
-        OrePoint::iter().nth(index)
-    }
-
-    fn from_name(name: &str) -> Option<Self> {
-        OrePoint::iter().find(|item| match item.name().split_once(' ') {
-            Some((n, _)) => n == name,
-            None => false,
-        })
-    }
-
-    fn name(&self) -> &'static str {
-        ""
-    }
-
-    fn localized_name(&self, _locale: &str) -> Option<&'static str> {
-        None
+    pub fn iter() -> impl Iterator<Item = &'static Self> {
+        ORE_TYPES.get().expect("ORE_TYPES not initialize").iter()
     }
 }
 

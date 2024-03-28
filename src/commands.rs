@@ -1,7 +1,7 @@
 use crate::{
     db::{self, OccupyData},
     paginate,
-    structs::{OrePoint, OreType},
+    structs::OrePoint,
 };
 use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
@@ -16,16 +16,20 @@ pub(crate) struct Data {
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 #[poise::command(slash_command, rename = "佔領")]
-#[doc = "佔領一座的礦點"]
+#[doc = "佔領一座礦點"]
 pub async fn occupy(
     ctx: Context<'_>,
     #[rename = "礦點"]
-    #[description = "你想佔領的礦點"]
-    point: OrePoint,
+    #[description = "佔領的礦點編號"]
+    point_id: i32,
 ) -> Result<()> {
     let guild_id = ctx.guild_id().context("Missing guild id")?.get();
     let user_id = ctx.author().id.get();
     let pool = &ctx.data().pool;
+    
+    let point = OrePoint::iter()
+        .find(|p| p.id == point_id)
+        .context("找不到礦點")?;
 
     // begin transaction
     let trans = pool.begin().await?;
@@ -79,8 +83,8 @@ pub async fn occupy(
             db::occupy(pool, data).await?;
             trans.commit().await?;
             ctx.reply(format!(
-                "已佔領 {} ({}, {})\n",
-                point.name, point.x, point.y
+                "已佔領 {} {} ({}, {})\n",
+                point.emoji(), point.name, point.x, point.y
             ))
             .await?;
             return Ok(());
@@ -89,21 +93,26 @@ pub async fn occupy(
 }
 
 #[poise::command(slash_command, rename = "強制佔領")]
-#[doc = "強制佔領一座的礦點"]
+#[doc = "強制佔領一座礦點"]
 pub async fn force_occupy(
     ctx: Context<'_>,
     #[rename = "玩家"]
     #[description = "佔領的玩家"]
     user: User,
     #[rename = "礦點"]
-    #[description = "佔領的礦點"]
-    point: OrePoint,
+    #[description = "佔領的礦點編號"]
+    point_id: i32,
 ) -> Result<()> {
     let guild_id = ctx.guild_id().context("Missing guild id")?.get();
     let user_id = user.id.get();
     let pool = &ctx.data().pool;
+
+    let point = OrePoint::iter()
+        .find(|p| p.id == point_id)
+        .context("找不到礦點")?;
+
     let data = OccupyData {
-        ore_point_id: point.id,
+        ore_point_id: point_id,
         guild_id: guild_id,
         user_id: user_id,
         due_time: Utc::now()
@@ -114,8 +123,8 @@ pub async fn force_occupy(
 
     db::force_occupy(pool, data).await?;
     ctx.reply(format!(
-        "<@{}> 已佔領 {} ({}, {})\n",
-        user_id, point.name, point.x, point.y
+        "<@{}> 已佔領 {} {} ({}, {})\n",
+        user_id, point.emoji(), point.name, point.x, point.y
     ))
     .await?;
     return Ok(());
@@ -153,11 +162,9 @@ pub async fn list(ctx: Context<'_>) -> Result<()> {
             });
 
         current_page.push(format!(
-            "{} {} ({}, {})\n{}\n",
-            OreType::iter()
-                .filter(|ore_type| (ore_type.id & p.ore_type) != 0)
-                .map(|ore_type| format!("<{}>", ore_type.emoji))
-                .collect::<String>(),
+            "`{:>2}` {} {} ({}, {})\n{}\n",
+            p.id,
+            p.emoji(),
             p.name,
             p.x,
             p.y,
