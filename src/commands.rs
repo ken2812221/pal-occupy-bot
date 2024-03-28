@@ -62,8 +62,8 @@ pub async fn occupy(
             trans.commit().await?;
 
             ctx.reply(format!(
-                "已登記挑戰 {} ({}, {})\n",
-                point.name, point.x, point.y
+                "已登記挑戰 {} {} ({}, {})\n",
+                point.emoji(), point.name, point.x, point.y
             ))
             .await?;
             Ok(())
