@@ -1460,6 +1460,7 @@ dependencies = [
  "shuttle-runtime",
  "shuttle-shared-db",
  "sqlx",
+ "tokio",
 ]
 
 [[package]]

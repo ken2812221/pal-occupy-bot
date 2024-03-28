@@ -1,6 +1,8 @@
 use crate::db;
+use chrono::{DateTime, Utc};
 use once_cell::sync::OnceCell;
 use sqlx::{prelude::FromRow, PgPool};
+use std::fmt::Write;
 
 #[derive(PartialEq, Eq, Clone, Debug, FromRow)]
 pub(crate) struct OreType {
@@ -16,6 +18,17 @@ pub(crate) struct OrePoint {
     pub x: i32,
     pub y: i32,
     pub name: String,
+}
+
+pub struct ListResult {
+    pub id: i32,
+    pub name: String,
+    pub ore_type: i32,
+    pub x: i32,
+    pub y: i32,
+    pub user_id: Option<u64>,
+    pub due_time: Option<DateTime<Utc>>,
+    pub battle_user_id: Option<u64>
 }
 
 static ORE_POINTS: OnceCell<Vec<OrePoint>> = OnceCell::new();
@@ -42,8 +55,10 @@ impl OrePoint {
     pub fn emoji(&self) -> String {
         OreType::iter()
             .filter(|ore_type| (ore_type.id & self.ore_type) != 0)
-            .map(|ore_type| format!("<{}>", ore_type.emoji))
-            .collect::<String>()
+            .fold(String::new(), |mut output, ore_type| {
+                let _ = write!(output, "<{}>", ore_type.emoji);
+                output
+            })
     }
 }
 
@@ -55,6 +70,17 @@ impl OreType {
 
     pub fn iter() -> impl Iterator<Item = &'static Self> {
         ORE_TYPES.get().expect("ORE_TYPES not initialize").iter()
+    }
+}
+
+impl ListResult {
+    pub fn emoji(&self) -> String {
+        OreType::iter()
+            .filter(|ore_type| (ore_type.id & self.ore_type) != 0)
+            .fold(String::new(), |mut output, ore_type| {
+                let _ = write!(output, "<{}>", ore_type.emoji);
+                output
+            })
     }
 }
 

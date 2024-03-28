@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 
-use crate::structs::{OrePoint, OreType};
+use crate::structs::{ListResult, OrePoint, OreType};
 
 #[derive(FromRow)]
 struct OccupyDB {
@@ -42,18 +42,6 @@ impl From<OccupyData> for OccupyDB {
             battle_user_id: value.battle_user_id.map(|x| x as i64),
         }
     }
-}
-
-pub async fn list_by_guild_id(
-    pool: &PgPool,
-    guild_id: u64,
-) -> Result<Vec<OccupyData>, sqlx::Error> {
-    let occupy_data: Vec<OccupyDB> =
-        sqlx::query_as("SELECT * FROM occupy_table WHERE guild_id = $1")
-            .bind(guild_id as i64)
-            .fetch_all(pool)
-            .await?;
-    Ok(occupy_data.into_iter().map(|x| x.into()).collect())
 }
 
 pub async fn occupy(pool: &PgPool, data: OccupyData) -> Result<(), sqlx::Error> {
@@ -138,4 +126,53 @@ pub async fn force_occupy(pool: &PgPool, data: OccupyData) -> Result<(), sqlx::E
     .execute(pool)
     .await?;
     Ok(())
+}
+
+#[derive(FromRow)]
+struct ListResultDB {
+    id: i32,
+    name: String,
+    ore_type: i32,
+    x: i32,
+    y: i32,
+    user_id: Option<i64>,
+    due_time: Option<DateTime<Utc>>,
+    battle_user_id: Option<i64>,
+}
+
+impl From<ListResultDB> for ListResult {
+    fn from(value: ListResultDB) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            ore_type: value.ore_type,
+            x: value.x,
+            y: value.y,
+            user_id: value.user_id.map(|x| x as u64),
+            due_time: value.due_time,
+            battle_user_id: value.battle_user_id.map(|x| x as u64),
+        }
+    }
+}
+
+pub async fn get_point_data(
+    pool: &PgPool,
+    guild_id: u64,
+    start: u32,
+    length: u32,
+) -> Result<Vec<ListResult>, sqlx::Error> {
+    let row: Vec<ListResultDB> = sqlx::query_as("SELECT * FROM ore_point LEFT JOIN occupy_table ON occupy_table.ore_point_id = ore_point.id AND occupy_table.guild_id = $1 ORDER BY ore_point.id OFFSET $2 LIMIT $3")
+        .bind(guild_id as i64)
+        .bind(start as i64)
+        .bind(length as i64)
+        .fetch_all(pool)
+        .await?;
+    Ok(row.into_iter().map(|x| x.into()).collect())
+}
+
+pub async fn get_point_count(pool: &PgPool) -> Result<u32, sqlx::Error> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ore_point")
+        .fetch_one(pool)
+        .await?;
+    Ok(count as u32)
 }
