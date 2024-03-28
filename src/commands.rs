@@ -35,7 +35,13 @@ pub async fn occupy(
 
     // 確認是否擁有同類礦點
     if db::has_occupy_type(pool, guild_id, user_id, point.ore_type).await? {
-        ctx.reply("你已佔領同類礦點或已發起挑戰").await?;
+        ctx.send(
+            CreateReply::default()
+                .reply(true)
+                .ephemeral(true)
+                .content("你已佔領同類礦點或已發起挑戰"),
+        )
+        .await?;
         return Ok(());
     }
 
@@ -46,13 +52,28 @@ pub async fn occupy(
 
             if data.due_time > Utc::now() {
                 // 佔領期限未到
-                ctx.reply(format!("礦點已被佔領，可於 <t:{0}:R> (<t:{0}:F>) 發起挑戰", data.due_time.timestamp())).await?;
+                ctx.send(
+                    CreateReply::default()
+                        .reply(true)
+                        .ephemeral(true)
+                        .content(format!(
+                            "礦點已被佔領，可於 <t:{0}:R> (<t:{0}:F>) 發起挑戰",
+                            data.due_time.timestamp()
+                        )),
+                )
+                .await?;
                 return Ok(());
             }
 
             if data.battle_user_id.is_some() {
                 // 已有人登記挑戰
-                ctx.reply("礦點已有玩家登記挑戰").await?;
+                ctx.send(
+                    CreateReply::default()
+                        .reply(true)
+                        .ephemeral(true)
+                        .content("礦點已有玩家登記挑戰"),
+                )
+                .await?;
                 return Ok(());
             }
 
@@ -63,7 +84,10 @@ pub async fn occupy(
 
             ctx.reply(format!(
                 "已登記挑戰 {} {} ({}, {})\n",
-                point.emoji(), point.name, point.x, point.y
+                point.emoji(),
+                point.name,
+                point.x,
+                point.y
             ))
             .await?;
             Ok(())
@@ -148,14 +172,15 @@ pub async fn list(
 ) -> Result<()> {
     let pool = &ctx.data().pool;
     let guild_id = ctx.guild_id().context("err")?.get();
-    let page_size = page_size.unwrap_or(5);
+    let page_size = page_size.unwrap_or(20);
 
     let content = list::list(pool, guild_id, 0, page_size).await?;
 
     let reply = CreateReply::default()
         .embed(content.embed)
         .components(content.component)
-        .reply(true);
+        .reply(true)
+        .ephemeral(true);
 
     ctx.send(reply).await?;
 
