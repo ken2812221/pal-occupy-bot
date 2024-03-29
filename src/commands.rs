@@ -14,8 +14,8 @@ pub(crate) struct Data {
 
 type Context<'a> = poise::Context<'a, Data, Error>;
 
+/// 佔領一座礦點
 #[poise::command(slash_command, rename = "佔領")]
-#[doc = "佔領一座礦點"]
 pub async fn occupy(
     ctx: Context<'_>,
     #[rename = "礦點"]
@@ -118,8 +118,8 @@ pub async fn occupy(
     }
 }
 
-#[poise::command(slash_command, rename = "強制佔領")]
-#[doc = "強制佔領一座礦點"]
+/// 強制佔領一座礦點
+#[poise::command(slash_command, rename = "強制佔領", default_member_permissions = "MANAGE_GUILD")]
 pub async fn force_occupy(
     ctx: Context<'_>,
     #[rename = "玩家"]
@@ -160,8 +160,8 @@ pub async fn force_occupy(
     Ok(())
 }
 
+/// 列出所有的礦點
 #[poise::command(slash_command, rename = "礦點")]
-#[doc = "列出所有的礦點"]
 pub async fn list(
     ctx: Context<'_>,
     #[min = 1]

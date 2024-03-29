@@ -1,10 +1,12 @@
 use anyhow::{Context as _, Error, Result};
+use commands::Data;
 use poise::serenity_prelude::{
-    self as serenity, ClientBuilder, CreateCommandOption, CreateInteractionResponse,
-    CreateInteractionResponseMessage, FullEvent, GatewayIntents, Interaction,
+    self as serenity, ClientBuilder, Context, CreateCommandOption, CreateInteractionResponse,
+    CreateInteractionResponseMessage, EventHandler, GatewayIntents, Interaction,
 };
-use shuttle_runtime::{self, Error as ShuttleError, SecretStore, Service};
-use std::{net::SocketAddr, num::ParseIntError};
+use shuttle_runtime::{self, async_trait, Error as ShuttleError, SecretStore, Service};
+use tokio::sync::Mutex;
+use std::{net::SocketAddr, num::ParseIntError, sync::Arc};
 use structs::OrePoint;
 mod commands;
 mod db;
@@ -54,38 +56,10 @@ async fn main(
             commands: vec![commands::list(), occupy_command, force_occupy_command],
             event_handler: (|serenity_ctx, event, _ctx, data| {
                 Box::pin(async move {
-                    if let FullEvent::InteractionCreate {
-                        interaction: Interaction::Component(c),
-                    } = event
-                    {
-                        let (page_index, page_size): (u32, u32) = c
-                            .data
-                            .custom_id
-                            .strip_prefix("list:")
-                            .and_then(|x| x.split_once(':'))
-                            .and_then(|(a, b)| {
-                                (|| -> Result<_, ParseIntError> { Ok((a.parse()?, b.parse()?)) })()
-                                    .ok()
-                            })
-                            .context("parse custom_id error")?;
-                        let content = list::list(
-                            &data.pool,
-                            c.guild_id.context("Unknown guild_id")?.get(),
-                            page_index,
-                            page_size,
-                        )
-                        .await?;
-                        c.create_response(
-                            serenity_ctx,
-                            CreateInteractionResponse::UpdateMessage(
-                                CreateInteractionResponseMessage::new()
-                                    .embed(content.embed)
-                                    .components(content.component),
-                            ),
-                        )
-                        .await?;
-                    }
-                    Ok(())
+                    let handler = Handler(data.clone(), Arc::new(Mutex::const_new(Ok(()))));
+                    event.clone().dispatch(serenity_ctx.clone(), &handler).await;
+                    let mut lock = handler.1.lock().await;
+                    std::mem::replace(&mut *lock, Ok(()))
                 })
             }),
             ..Default::default()
@@ -109,4 +83,44 @@ async fn main(
     Ok(BotService { client })
 }
 
-// async fn on_interaction(pool: &PgPool) {}
+struct Handler(Data, Arc<Mutex<Result<()>>>);
+
+impl Handler {
+    async fn interaction(&self, ctx: Context, interaction: Interaction) -> Result<()> {
+        let Interaction::Component(c) = interaction else  { return Ok(()); };
+        let (page_index, page_size): (u32, u32) = c
+            .data
+            .custom_id
+            .strip_prefix("list:")
+            .and_then(|x| x.split_once(':'))
+            .and_then(|(a, b)| {
+                (|| -> Result<_, ParseIntError> { Ok((a.parse()?, b.parse()?)) })().ok()
+            })
+            .context("parse custom_id error")?;
+        let content = list::list(
+            &self.0.pool,
+            c.guild_id.context("Unknown guild_id")?.get(),
+            page_index,
+            page_size,
+        )
+        .await?;
+        c.create_response(
+            ctx,
+            CreateInteractionResponse::UpdateMessage(
+                CreateInteractionResponseMessage::new()
+                    .embed(content.embed)
+                    .components(content.component),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl EventHandler for Handler {
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        let result = self.interaction(ctx, interaction).await;
+        *self.1.lock().await = result;
+    }
+}
