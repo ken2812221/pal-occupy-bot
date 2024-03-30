@@ -193,3 +193,14 @@ pub async fn get_guild_notify_role(pool: &PgPool, guild_id: u64) -> Result<Optio
         .await?;
     Ok(result.map(|x| x.0 as u64))
 }
+
+pub async fn write_log(pool: &PgPool, guild_id: Option<u64>, channel_id: u64, user_id: u64, content: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO command_log(guild_id, channel_id, user_id, content) VALUES ($1, $2, $3, $4)")
+        .bind(guild_id.map(|x| x as i64))
+        .bind(channel_id as i64)
+        .bind(user_id as i64)
+        .bind(content)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

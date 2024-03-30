@@ -1,16 +1,23 @@
 use anyhow::{Context as _, Error, Result};
 use commands::Data;
-use poise::{serenity_prelude::{
-    self as serenity, ClientBuilder, Context, CreateInteractionResponse,
-    CreateInteractionResponseMessage, EventHandler, GatewayIntents, Interaction,
-}, FrameworkError};
+use poise::{
+    serenity_prelude::{
+        self as serenity, ClientBuilder, Context, CreateInteractionResponse,
+        CreateInteractionResponseMessage, EventHandler, FullEvent, GatewayIntents, Interaction,
+    },
+    BoxFuture,
+};
 use shuttle_runtime::{self, async_trait, Error as ShuttleError, SecretStore, Service};
-use std::{net::SocketAddr, num::ParseIntError, sync::Arc};
+use std::{net::SocketAddr, num::ParseIntError, ops::DerefMut, sync::Arc};
 use tokio::sync::Mutex;
 mod commands;
 mod db;
 mod list;
 mod structs;
+
+type FrameworkContext<'a> = poise::FrameworkContext<'a, Data, Error>;
+type FrameworkError<'a> = poise::FrameworkError<'a, Data, Error>;
+type PoiseContext<'a> = poise::Context<'a, Data, Error>;
 
 struct BotService {
     client: serenity::Client,
@@ -34,21 +41,9 @@ async fn main(
     let discord_bot = poise::Framework::builder()
         .options(poise::FrameworkOptions {
             commands: commands::get_commands(),
-            event_handler: (|serenity_ctx, event, _ctx, data| {
-                Box::pin(async move {
-                    let handler = Handler(data.clone(), Arc::new(Mutex::const_new(Ok(()))));
-                    event.clone().dispatch(serenity_ctx.clone(), &handler).await;
-                    let mut lock = handler.1.lock().await;
-                    std::mem::replace(&mut *lock, Ok(()))
-                })
-            }),
-            on_error: |err| {
-                Box::pin(async move {
-                    if let FrameworkError::Command { error, .. } = err {
-                        tracing::error!("{}", error);
-                    }
-                })
-            },
+            event_handler,
+            on_error,
+            post_command: write_log,
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -106,6 +101,39 @@ impl Handler {
     }
 }
 
+fn event_handler<'a>(
+    ctx: &'a Context,
+    event: &'a FullEvent,
+    _: FrameworkContext<'a>,
+    data: &'a Data,
+) -> BoxFuture<'a, Result<()>> {
+    Box::pin(async move {
+        let handler = Handler(data.clone(), Arc::new(Mutex::const_new(Ok(()))));
+        event.clone().dispatch(ctx.clone(), &handler).await;
+        std::mem::replace(handler.1.lock_owned().await.deref_mut(), Ok(()))
+    })
+}
+
+fn on_error(err: FrameworkError<'_>) -> BoxFuture<'_, ()> {
+    Box::pin(async move {
+        if let FrameworkError::Command { error, .. } = err {
+            tracing::error!("{}", error);
+        }
+    })
+}
+
+fn write_log(ctx: PoiseContext<'_>) -> BoxFuture<'_, ()> {
+    Box::pin(async move {
+        _ = db::write_log(
+            &ctx.data().pool,
+            ctx.guild_id().map(|x| x.get()),
+            ctx.channel_id().get(),
+            ctx.author().id.get(),
+            &ctx.invocation_string(),
+        )
+        .await;
+    })
+}
 #[async_trait]
 impl EventHandler for Handler {
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
