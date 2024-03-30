@@ -1,5 +1,5 @@
 use crate::{
-    db::{self, OccupyData},
+    db::{BotDB, OccupyData},
     list,
     structs::OrePoint,
 };
@@ -10,12 +10,7 @@ use poise::{
     Command, CreateReply,
 };
 
-#[derive(Clone)]
-pub(crate) struct Data {
-    pub pool: sqlx::PgPool,
-}
-
-type Context<'a> = poise::Context<'a, Data, Error>;
+type Context<'a> = poise::Context<'a, BotDB, Error>;
 
 /// 佔領一座礦點
 #[poise::command(slash_command, rename = "佔領")]
@@ -27,17 +22,20 @@ async fn occupy(
 ) -> Result<()> {
     let guild_id = ctx.guild_id().context("Missing guild id")?.get();
     let user_id = ctx.author().id.get();
-    let pool = &ctx.data().pool;
+    let db = ctx.data();
 
     let point = OrePoint::iter()
         .find(|p| p.id == point_id)
         .context("找不到礦點")?;
 
     // begin transaction
-    let trans = pool.begin().await?;
+    let trans = db.begin_transaction().await?;
 
     // 確認是否擁有同類礦點
-    if db::has_occupy_type(pool, guild_id, user_id, point.ore_type).await? {
+    if db
+        .has_occupy_type(guild_id, user_id, point.ore_type)
+        .await?
+    {
         ctx.send(
             CreateReply::default()
                 .reply(true)
@@ -49,7 +47,7 @@ async fn occupy(
     }
 
     // 確認是否佔領
-    match db::get_occupy_data(pool, guild_id, point.id).await? {
+    match db.get_occupy_data(guild_id, point.id).await? {
         Some(mut data) => {
             // 已被佔領
 
@@ -83,21 +81,27 @@ async fn occupy(
             // 登記挑戰
             data.battle_user_id = Some(user_id);
             let original_user_id = data.user_id;
-            db::update_occupy_data(pool, data).await?;
+            db.update_occupy_data(data).await?;
             trans.commit().await?;
 
             // 找到登記通知的身分組
-            let role_id = db::get_guild_notify_role(pool, guild_id).await?;
+            let role_id = db.get_guild_notify_role(guild_id).await?;
 
-            ctx.send(CreateReply::default().reply(true).allowed_mentions(CreateAllowedMentions::new().all_roles(true).all_users(true)).content(format!(
-                "已登記挑戰由 <@{}> 佔領的 {} {} ({}, {}) {}\n",
-                original_user_id,
-                point.emoji(),
-                point.name,
-                point.x,
-                point.y,
-                role_id.map_or(String::new(), |role_id| format!("<@&{role_id}>"))
-            ))).await?;
+            ctx.send(
+                CreateReply::default()
+                    .reply(true)
+                    .allowed_mentions(CreateAllowedMentions::new().all_roles(true).all_users(true))
+                    .content(format!(
+                        "已登記挑戰由 <@{}> 佔領的 {} {} ({}, {}) {}\n",
+                        original_user_id,
+                        point.emoji(),
+                        point.name,
+                        point.x,
+                        point.y,
+                        role_id.map_or(String::new(), |role_id| format!("<@&{role_id}>"))
+                    )),
+            )
+            .await?;
 
             Ok(())
         }
@@ -112,7 +116,7 @@ async fn occupy(
                 battle_user_id: None,
             };
 
-            db::occupy(pool, data).await?;
+            db.occupy(data).await?;
             trans.commit().await?;
             ctx.reply(format!(
                 "已佔領 {} {} ({}, {})\n",
@@ -144,7 +148,7 @@ async fn force_occupy(
 ) -> Result<()> {
     let guild_id = ctx.guild_id().context("Missing guild id")?.get();
     let user_id = user.id.get();
-    let pool = &ctx.data().pool;
+    let db = ctx.data();
 
     let point = OrePoint::iter()
         .find(|p| p.id == point_id)
@@ -160,7 +164,7 @@ async fn force_occupy(
         battle_user_id: None,
     };
 
-    db::force_occupy(pool, data).await?;
+    db.force_occupy(data).await?;
     ctx.reply(format!(
         "<@{}> 已佔領 {} {} ({}, {})\n",
         user_id,
@@ -183,11 +187,11 @@ async fn list_points(
     #[description = "每頁礦點數量"]
     page_size: Option<u32>,
 ) -> Result<()> {
-    let pool = &ctx.data().pool;
+    let db = ctx.data();
     let guild_id = ctx.guild_id().context("err")?.get();
     let page_size = page_size.unwrap_or(20);
 
-    let content = list::list(pool, guild_id, 0, page_size).await?;
+    let content = list::list(db, guild_id, 0, page_size).await?;
 
     let reply = CreateReply::default()
         .embed(content.embed)
@@ -212,11 +216,11 @@ async fn set_notify(
     #[description = "要通知的身分組"]
     role: Role,
 ) -> Result<()> {
-    let pool = &ctx.data().pool;
+    let db = ctx.data();
     let guild_id = ctx.guild_id().context("err")?.get();
     let role_id = role.id.get();
 
-    db::set_guild_notify_role(pool, guild_id, role_id).await?;
+    db.set_guild_notify_role(guild_id, role_id).await?;
 
     ctx.send(
         CreateReply::default()
@@ -229,7 +233,7 @@ async fn set_notify(
     Ok(())
 }
 
-pub fn get_commands() -> Vec<Command<Data, Error>> {
+pub fn get_commands() -> Vec<Command<BotDB, Error>> {
     let mut occupy_command = occupy();
     let mut force_occupy_command = force_occupy();
 

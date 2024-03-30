@@ -1,5 +1,5 @@
 use anyhow::{Context as _, Error, Result};
-use commands::Data;
+use db::BotDB;
 use poise::{
     serenity_prelude::{
         self as serenity, ClientBuilder, Context, CreateInteractionResponse,
@@ -15,9 +15,9 @@ mod db;
 mod list;
 mod structs;
 
-type FrameworkContext<'a> = poise::FrameworkContext<'a, Data, Error>;
-type FrameworkError<'a> = poise::FrameworkError<'a, Data, Error>;
-type PoiseContext<'a> = poise::Context<'a, Data, Error>;
+type FrameworkContext<'a> = poise::FrameworkContext<'a, BotDB, Error>;
+type FrameworkError<'a> = poise::FrameworkError<'a, BotDB, Error>;
+type PoiseContext<'a> = poise::Context<'a, BotDB, Error>;
 
 struct BotService {
     client: serenity::Client,
@@ -36,7 +36,8 @@ async fn main(
     #[shuttle_runtime::Secrets] secrets: SecretStore,
     #[shuttle_shared_db::Postgres(local_uri = "{secrets.POSTGRESQL_URI}")] pool: sqlx::PgPool,
 ) -> Result<impl Service, ShuttleError> {
-    structs::init(&pool).await;
+    let db = BotDB::new(pool);
+    structs::init(&db).await;
 
     let discord_bot = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -49,7 +50,7 @@ async fn main(
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(commands::Data { pool })
+                Ok(db)
             })
         })
         .build();
@@ -65,7 +66,7 @@ async fn main(
     Ok(BotService { client })
 }
 
-struct Handler(Data, Arc<Mutex<Result<()>>>);
+struct Handler(BotDB, Arc<Mutex<Result<()>>>);
 
 impl Handler {
     async fn interaction(&self, ctx: Context, interaction: Interaction) -> Result<()> {
@@ -82,7 +83,7 @@ impl Handler {
             })
             .context("parse custom_id error")?;
         let content = list::list(
-            &self.0.pool,
+            &self.0,
             c.guild_id.context("Unknown guild_id")?.get(),
             page_index,
             page_size,
@@ -105,7 +106,7 @@ fn event_handler<'a>(
     ctx: &'a Context,
     event: &'a FullEvent,
     _: FrameworkContext<'a>,
-    data: &'a Data,
+    data: &'a BotDB,
 ) -> BoxFuture<'a, Result<()>> {
     Box::pin(async move {
         let handler = Handler(data.clone(), Arc::new(Mutex::const_new(Ok(()))));
@@ -124,14 +125,15 @@ fn on_error(err: FrameworkError<'_>) -> BoxFuture<'_, ()> {
 
 fn write_log(ctx: PoiseContext<'_>) -> BoxFuture<'_, ()> {
     Box::pin(async move {
-        _ = db::write_log(
-            &ctx.data().pool,
-            ctx.guild_id().map(|x| x.get()),
-            ctx.channel_id().get(),
-            ctx.author().id.get(),
-            &ctx.invocation_string(),
-        )
-        .await;
+        _ = ctx
+            .data()
+            .write_log(
+                ctx.guild_id().map(|x| x.get()),
+                ctx.channel_id().get(),
+                ctx.author().id.get(),
+                &ctx.invocation_string(),
+            )
+            .await;
     })
 }
 #[async_trait]

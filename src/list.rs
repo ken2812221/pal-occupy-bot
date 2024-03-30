@@ -1,9 +1,8 @@
-use crate::db;
+use crate::db::BotDB;
 use anyhow::{Error, Ok, Result};
 use poise::serenity_prelude::{
-    ButtonStyle, Color, CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter
+    ButtonStyle, Color, CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter,
 };
-use sqlx::PgPool;
 
 pub struct ListContent {
     pub embed: CreateEmbed,
@@ -11,15 +10,15 @@ pub struct ListContent {
 }
 
 pub async fn list(
-    pool: &PgPool,
+    db: &BotDB,
     guild_id: u64,
     page_index: u32,
     page_size: u32,
 ) -> Result<ListContent, Error> {
     let start = page_size * page_index;
 
-    let max_page = db::get_point_count(pool).await?.div_ceil(page_size);
-    let data = db::get_point_data(pool, guild_id, start, page_size).await?;
+    let max_page = db.get_point_count().await?.div_ceil(page_size);
+    let data = db.get_point_data(guild_id, start, page_size).await?;
 
     let mut embed = CreateEmbed::new()
         .color(Color::BLUE)
@@ -65,7 +64,9 @@ pub async fn list(
             CreateButton::new("0").disabled(true)
         }
         .emoji('◀'),
-        CreateButton::new(format!("list:{}:{}", page_index, page_size)).emoji('🔄').style(ButtonStyle::Success),
+        CreateButton::new(format!("list:{}:{}", page_index, page_size))
+            .emoji('🔄')
+            .style(ButtonStyle::Success),
         if page_index + 1 < max_page {
             CreateButton::new(format!("list:{}:{}", page_index + 1, page_size))
         } else {

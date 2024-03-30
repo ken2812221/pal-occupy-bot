@@ -1,7 +1,7 @@
-use crate::db;
+use crate::db::BotDB;
 use chrono::{DateTime, Utc};
 use once_cell::sync::OnceCell;
-use sqlx::{prelude::FromRow, PgPool};
+use sqlx::prelude::FromRow;
 use std::fmt::Write;
 
 #[derive(PartialEq, Eq, Clone, Debug, FromRow)]
@@ -28,17 +28,15 @@ pub struct ListResult {
     pub y: i32,
     pub user_id: Option<u64>,
     pub due_time: Option<DateTime<Utc>>,
-    pub battle_user_id: Option<u64>
+    pub battle_user_id: Option<u64>,
 }
 
 static ORE_POINTS: OnceCell<Vec<OrePoint>> = OnceCell::new();
 static ORE_TYPES: OnceCell<Vec<OreType>> = OnceCell::new();
 
 impl OrePoint {
-    async fn init(pool: &PgPool) {
-        let data = db::get_ore_points(pool)
-            .await
-            .expect("Cannot get ORE_POINTS");
+    async fn init(db: &BotDB) {
+        let data = db.get_ore_points().await.expect("Cannot get ORE_POINTS");
         ORE_POINTS
             .set(data)
             .expect("ORE_POINTS set more than once.");
@@ -63,8 +61,8 @@ impl OrePoint {
 }
 
 impl OreType {
-    async fn init(pool: &PgPool) {
-        let data = db::get_ore_types(pool).await.expect("Cannot get ORE_TYPES");
+    async fn init(db: &BotDB) {
+        let data = db.get_ore_types().await.expect("Cannot get ORE_TYPES");
         ORE_TYPES.set(data).expect("ORE_TYPES set more than once.");
     }
 
@@ -84,7 +82,7 @@ impl ListResult {
     }
 }
 
-pub async fn init(pool: &PgPool) {
-    OreType::init(pool).await;
-    OrePoint::init(pool).await;
+pub async fn init(db: &BotDB) {
+    OreType::init(db).await;
+    OrePoint::init(db).await;
 }
