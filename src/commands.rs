@@ -5,7 +5,10 @@ use crate::{
 };
 use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
-use poise::{serenity_prelude::User, CreateReply};
+use poise::{
+    serenity_prelude::{CommandOptionType, CreateAllowedMentions, CreateCommandOption, Role, User},
+    Command, CreateReply,
+};
 
 #[derive(Clone)]
 pub(crate) struct Data {
@@ -16,7 +19,7 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 /// 佔領一座礦點
 #[poise::command(slash_command, rename = "佔領")]
-pub async fn occupy(
+async fn occupy(
     ctx: Context<'_>,
     #[rename = "礦點"]
     #[description = "佔領的礦點編號"]
@@ -79,17 +82,23 @@ pub async fn occupy(
 
             // 登記挑戰
             data.battle_user_id = Some(user_id);
+            let original_user_id = data.user_id;
             db::update_occupy_data(pool, data).await?;
             trans.commit().await?;
 
-            ctx.reply(format!(
-                "已登記挑戰 {} {} ({}, {})\n",
+            // 找到登記通知的身分組
+            let role_id = db::get_guild_notify_role(pool, guild_id).await?;
+
+            ctx.send(CreateReply::default().reply(true).allowed_mentions(CreateAllowedMentions::new().all_roles(true).all_users(true)).content(format!(
+                "已登記挑戰由 <@{}> 佔領的 {} {} ({}, {}) {}\n",
+                original_user_id,
                 point.emoji(),
                 point.name,
                 point.x,
-                point.y
-            ))
-            .await?;
+                point.y,
+                role_id.map_or(String::new(), |role_id| format!("<@&{role_id}>"))
+            ))).await?;
+
             Ok(())
         }
         None => {
@@ -119,8 +128,12 @@ pub async fn occupy(
 }
 
 /// 強制佔領一座礦點
-#[poise::command(slash_command, rename = "強制佔領", default_member_permissions = "MANAGE_GUILD")]
-pub async fn force_occupy(
+#[poise::command(
+    slash_command,
+    rename = "強制佔領",
+    default_member_permissions = "MANAGE_GUILD"
+)]
+async fn force_occupy(
     ctx: Context<'_>,
     #[rename = "玩家"]
     #[description = "佔領的玩家"]
@@ -162,7 +175,7 @@ pub async fn force_occupy(
 
 /// 列出所有的礦點
 #[poise::command(slash_command, rename = "礦點")]
-pub async fn list(
+async fn list_points(
     ctx: Context<'_>,
     #[min = 1]
     #[max = 20]
@@ -185,4 +198,60 @@ pub async fn list(
     ctx.send(reply).await?;
 
     Ok(())
+}
+
+/// 列出所有的礦點
+#[poise::command(
+    slash_command,
+    rename = "挑戰通知",
+    default_member_permissions = "MANAGE_GUILD"
+)]
+async fn set_notify(
+    ctx: Context<'_>,
+    #[rename = "身分組"]
+    #[description = "要通知的身分組"]
+    role: Role,
+) -> Result<()> {
+    let pool = &ctx.data().pool;
+    let guild_id = ctx.guild_id().context("err")?.get();
+    let role_id = role.id.get();
+
+    db::set_guild_notify_role(pool, guild_id, role_id).await?;
+
+    ctx.send(
+        CreateReply::default()
+            .reply(true)
+            .ephemeral(true)
+            .content(format!("發起挑戰時將會通知 <@&{}>", role_id)),
+    )
+    .await?;
+
+    Ok(())
+}
+
+pub fn get_commands() -> Vec<Command<Data, Error>> {
+    let mut occupy_command = occupy();
+    let mut force_occupy_command = force_occupy();
+
+    let ore_point_type_setter = Some(|option: CreateCommandOption| -> CreateCommandOption {
+        option
+            .kind(CommandOptionType::Integer)
+            .min_int_value(1)
+            .max_int_value(OrePoint::iter().count() as u64)
+    } as fn(_) -> _);
+
+    // Set max ore point id
+
+    occupy_command.parameters.first_mut().unwrap().type_setter = ore_point_type_setter;
+    force_occupy_command
+        .parameters
+        .get_mut(1)
+        .unwrap()
+        .type_setter = ore_point_type_setter;
+    vec![
+        set_notify(),
+        list_points(),
+        occupy_command,
+        force_occupy_command,
+    ]
 }

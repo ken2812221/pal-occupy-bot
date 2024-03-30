@@ -176,3 +176,20 @@ pub async fn get_point_count(pool: &PgPool) -> Result<u32, sqlx::Error> {
         .await?;
     Ok(count as u32)
 }
+
+pub async fn set_guild_notify_role(pool: &PgPool, guild_id: u64, role_id: u64) -> Result<(), sqlx::Error> {
+    sqlx::query("INSERT INTO battle_notify_role(guild_id, role_id) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET role_id = $2")
+        .bind(guild_id as i64)
+        .bind(role_id as i64)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn get_guild_notify_role(pool: &PgPool, guild_id: u64) -> Result<Option<u64>, sqlx::Error> {
+    let result: Option<(i64,)> = sqlx::query_as("SELECT role_id FROM battle_notify_role WHERE guild_id = $1")
+        .bind(guild_id as i64)
+        .fetch_optional(pool)
+        .await?;
+    Ok(result.map(|x| x.0 as u64))
+}

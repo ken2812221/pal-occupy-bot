@@ -1,7 +1,7 @@
 use crate::db;
 use anyhow::{Error, Ok, Result};
 use poise::serenity_prelude::{
-    Color, CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter,
+    ButtonStyle, Color, CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter
 };
 use sqlx::PgPool;
 
@@ -65,6 +65,7 @@ pub async fn list(
             CreateButton::new("0").disabled(true)
         }
         .emoji('◀'),
+        CreateButton::new(format!("list:{}:{}", page_index, page_size)).emoji('🔄').style(ButtonStyle::Success),
         if page_index + 1 < max_page {
             CreateButton::new(format!("list:{}:{}", page_index + 1, page_size))
         } else {

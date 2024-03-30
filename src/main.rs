@@ -1,13 +1,12 @@
 use anyhow::{Context as _, Error, Result};
 use commands::Data;
-use poise::serenity_prelude::{
-    self as serenity, ClientBuilder, Context, CreateCommandOption, CreateInteractionResponse,
+use poise::{serenity_prelude::{
+    self as serenity, ClientBuilder, Context, CreateInteractionResponse,
     CreateInteractionResponseMessage, EventHandler, GatewayIntents, Interaction,
-};
+}, FrameworkError};
 use shuttle_runtime::{self, async_trait, Error as ShuttleError, SecretStore, Service};
-use tokio::sync::Mutex;
 use std::{net::SocketAddr, num::ParseIntError, sync::Arc};
-use structs::OrePoint;
+use tokio::sync::Mutex;
 mod commands;
 mod db;
 mod list;
@@ -32,28 +31,9 @@ async fn main(
 ) -> Result<impl Service, ShuttleError> {
     structs::init(&pool).await;
 
-    let mut occupy_command = commands::occupy();
-    let mut force_occupy_command = commands::force_occupy();
-
-    let ore_point_type_setter = Some(|option: CreateCommandOption| -> CreateCommandOption {
-        option
-            .kind(serenity::CommandOptionType::Integer)
-            .min_int_value(1)
-            .max_int_value(OrePoint::iter().count() as u64)
-    } as fn(_) -> _);
-
-    // Set max ore point id
-
-    occupy_command.parameters.first_mut().unwrap().type_setter = ore_point_type_setter;
-    force_occupy_command
-        .parameters
-        .get_mut(1)
-        .unwrap()
-        .type_setter = ore_point_type_setter;
-
     let discord_bot = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![commands::list(), occupy_command, force_occupy_command],
+            commands: commands::get_commands(),
             event_handler: (|serenity_ctx, event, _ctx, data| {
                 Box::pin(async move {
                     let handler = Handler(data.clone(), Arc::new(Mutex::const_new(Ok(()))));
@@ -62,6 +42,13 @@ async fn main(
                     std::mem::replace(&mut *lock, Ok(()))
                 })
             }),
+            on_error: |err| {
+                Box::pin(async move {
+                    if let FrameworkError::Command { error, .. } = err {
+                        tracing::error!("{}", error);
+                    }
+                })
+            },
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -87,7 +74,9 @@ struct Handler(Data, Arc<Mutex<Result<()>>>);
 
 impl Handler {
     async fn interaction(&self, ctx: Context, interaction: Interaction) -> Result<()> {
-        let Interaction::Component(c) = interaction else  { return Ok(()); };
+        let Interaction::Component(c) = interaction else {
+            return Ok(());
+        };
         let (page_index, page_size): (u32, u32) = c
             .data
             .custom_id
