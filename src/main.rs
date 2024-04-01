@@ -117,9 +117,7 @@ fn event_handler<'a>(
 
 fn on_error(err: FrameworkError<'_>) -> BoxFuture<'_, ()> {
     Box::pin(async move {
-        if let FrameworkError::Command { error, .. } = err {
-            tracing::error!("{}", error);
-        }
+        tracing::error!("{err}");
     })
 }
 

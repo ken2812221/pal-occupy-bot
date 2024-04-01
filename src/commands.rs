@@ -6,9 +6,13 @@ use crate::{
 use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
 use poise::{
-    serenity_prelude::{CommandOptionType, CreateAllowedMentions, CreateCommandOption, Role, User},
-    Command, CreateReply,
+    serenity_prelude::{
+        self as serenity, CommandInteraction, CommandOptionType, Context as SerenityContext, CreateActionRow, CreateAllowedMentions, CreateButton, CreateCommandOption, CreateMessage, DiscordJsonError, ErrorResponse, HttpError, Message, ResolvedValue, Role, User
+    },
+    Command, CreateReply, SlashArgError, SlashArgument,
 };
+use shuttle_runtime::async_trait;
+use std::fmt::Display;
 
 type Context<'a> = poise::Context<'a, BotDB, Error>;
 
@@ -178,7 +182,7 @@ async fn force_occupy(
 }
 
 /// 列出所有的礦點
-#[poise::command(slash_command, rename = "礦點")]
+#[poise::command(slash_command, rename = "礦點", ephemeral)]
 async fn list_points(
     ctx: Context<'_>,
     #[min = 1]
@@ -208,7 +212,8 @@ async fn list_points(
 #[poise::command(
     slash_command,
     rename = "挑戰通知",
-    default_member_permissions = "MANAGE_GUILD"
+    default_member_permissions = "MANAGE_GUILD",
+    ephemeral
 )]
 async fn set_notify(
     ctx: Context<'_>,
@@ -222,14 +227,88 @@ async fn set_notify(
 
     db.set_guild_notify_role(guild_id, role_id).await?;
 
-    ctx.send(
-        CreateReply::default()
-            .reply(true)
-            .ephemeral(true)
-            .content(format!("發起挑戰時將會通知 <@&{}>", role_id)),
-    )
-    .await?;
+    ctx.reply(format!("發起挑戰時將會通知 <@&{}>", role_id))
+        .await?;
 
+    Ok(())
+}
+
+enum Mentionable {
+    User(User),
+    Role(Role),
+}
+
+#[async_trait]
+impl SlashArgument for Mentionable {
+    async fn extract(
+        _: &SerenityContext,
+        _: &CommandInteraction,
+        value: &ResolvedValue<'_>,
+    ) -> Result<Self, SlashArgError> {
+        match *value {
+            ResolvedValue::User(user, _) => Ok(Self::User(user.clone())),
+            ResolvedValue::Role(role) => Ok(Self::Role(role.clone())),
+            _ => Err(SlashArgError::new_command_structure_mismatch(
+                "Value should be user or role.",
+            )),
+        }
+    }
+
+    fn create(builder: CreateCommandOption) -> CreateCommandOption {
+        builder.kind(CommandOptionType::Mentionable)
+    }
+}
+
+impl Display for Mentionable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mentionable::User(user) => write!(f, "<@{}>", user.id.get()),
+            Mentionable::Role(role) => write!(f, "<@&{}>", role.id.get()),
+        }
+    }
+}
+
+#[poise::command(
+    slash_command,
+    guild_only,
+    default_member_permissions = "MANAGE_GUILD",
+    rename = "測試",
+    ephemeral
+)]
+async fn init(ctx: Context<'_>) -> Result<()> {
+    ctx.defer_ephemeral().await?;
+    let button_row = vec![
+        CreateButton::new("occupy").label("佔領"),
+        CreateButton::new("list").label("礦點佔領情形"),
+    ];
+    let result = ctx
+        .channel_id()
+        .send_message(
+            ctx,
+            CreateMessage::new().components(vec![CreateActionRow::Buttons(button_row)]),
+        )
+        .await;
+    match result {
+        Ok(_) => {
+            let handle = ctx.reply("OK").await?;
+            handle.delete(ctx).await?;
+        }
+        Err(serenity::Error::Http(HttpError::UnsuccessfulRequest(ErrorResponse {
+            error: DiscordJsonError { code: 50001, .. },
+            ..
+        }))) => {
+            ctx.reply("錯誤! 沒有發送訊息權限").await?;
+        }
+        Err(err) => {
+            ctx.reply(format!("{err:#?}")).await?;
+        }
+    };
+    Ok(())
+}
+
+#[poise::command(context_menu_command = "aaa", guild_only, ephemeral, default_member_permissions = "MANAGE_GUILD")]
+async fn test2(ctx: Context<'_>, msg: Message) -> Result<()> {
+    ctx.reply(msg.id.get().to_string()).await?;
     Ok(())
 }
 
@@ -237,12 +316,13 @@ pub fn get_commands() -> Vec<Command<BotDB, Error>> {
     let mut occupy_command = occupy();
     let mut force_occupy_command = force_occupy();
 
-    let ore_point_type_setter = Some(|option: CreateCommandOption| -> CreateCommandOption {
-        option
-            .kind(CommandOptionType::Integer)
-            .min_int_value(1)
-            .max_int_value(OrePoint::iter().count() as u64)
-    } as fn(_) -> _);
+    let ore_point_type_setter: Option<fn(CreateCommandOption) -> CreateCommandOption> =
+        Some(|option| {
+            option
+                .kind(CommandOptionType::Integer)
+                .min_int_value(1)
+                .max_int_value(OrePoint::iter().count() as u64)
+        });
 
     // Set max ore point id
 
@@ -252,7 +332,9 @@ pub fn get_commands() -> Vec<Command<BotDB, Error>> {
         .get_mut(1)
         .unwrap()
         .type_setter = ore_point_type_setter;
+
     vec![
+        // init(),
         set_notify(),
         list_points(),
         occupy_command,
