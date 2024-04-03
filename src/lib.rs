@@ -13,7 +13,7 @@ use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 use tokio::sync::Mutex;
 mod commands;
 mod db;
-mod list;
+mod interaction;
 mod structs;
 
 type FrameworkContext<'a> = poise::FrameworkContext<'a, BotDB, Error>;
@@ -68,7 +68,7 @@ impl Handler {
             .and_then(|x| x.split_once(':'))
             .and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
             .context("parse custom_id error")?;
-        let content = list::list(
+        let content = interaction::list(
             &self.0,
             c.guild_id.context("Unknown guild_id")?.get(),
             page_index,

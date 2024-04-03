@@ -1,6 +1,6 @@
 use crate::{
     db::{BotDB, OccupyData},
-    list,
+    interaction,
     structs::OrePoint,
 };
 use anyhow::{Context as _, Error, Result};
@@ -197,7 +197,7 @@ async fn list_points(
     let guild_id = ctx.guild_id().context("err")?.get();
     let page_size = page_size.unwrap_or(20);
 
-    let content = list::list(db, guild_id, 0, page_size).await?;
+    let content = interaction::list(db, guild_id, 0, page_size).await?;
 
     let reply = CreateReply::default()
         .embed(content.embed)
