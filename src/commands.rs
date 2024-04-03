@@ -7,7 +7,9 @@ use anyhow::{Context as _, Error, Result};
 use chrono::{Days, Utc};
 use poise::{
     serenity_prelude::{
-        self as serenity, CommandInteraction, CommandOptionType, Context as SerenityContext, CreateActionRow, CreateAllowedMentions, CreateButton, CreateCommandOption, CreateMessage, DiscordJsonError, ErrorResponse, HttpError, Message, ResolvedValue, Role, User
+        self as serenity, CommandInteraction, CommandOptionType, Context as SerenityContext,
+        CreateActionRow, CreateAllowedMentions, CreateButton, CreateCommandOption, CreateMessage,
+        DiscordJsonError, ErrorResponse, HttpError, Message, ResolvedValue, Role, User,
     },
     Command, CreateReply, SlashArgError, SlashArgument,
 };
@@ -272,7 +274,7 @@ impl Display for Mentionable {
     slash_command,
     guild_only,
     default_member_permissions = "MANAGE_GUILD",
-    rename = "測試",
+    rename = "建立按鈕",
     ephemeral
 )]
 async fn init(ctx: Context<'_>) -> Result<()> {
@@ -297,7 +299,7 @@ async fn init(ctx: Context<'_>) -> Result<()> {
             error: DiscordJsonError { code: 50001, .. },
             ..
         }))) => {
-            ctx.reply("錯誤! 沒有發送訊息權限").await?;
+            ctx.reply("錯誤! 沒有權限在此頻道發送訊息").await?;
         }
         Err(err) => {
             ctx.reply(format!("{err:#?}")).await?;
@@ -306,9 +308,23 @@ async fn init(ctx: Context<'_>) -> Result<()> {
     Ok(())
 }
 
-#[poise::command(context_menu_command = "aaa", guild_only, ephemeral, default_member_permissions = "MANAGE_GUILD")]
+#[poise::command(
+    context_menu_command = "aaa",
+    guild_only,
+    ephemeral,
+    default_member_permissions = "MANAGE_GUILD"
+)]
 async fn test2(ctx: Context<'_>, msg: Message) -> Result<()> {
-    ctx.reply(msg.id.get().to_string()).await?;
+    let new_msg = CreateMessage::new()
+        .reference_message(&msg)
+        .content(format!(
+            "https://discord.com/channels/{}/{}/{}",
+            ctx.guild_id().context("No guild id")?,
+            ctx.channel_id(),
+            msg.id
+        ));
+    ctx.channel_id().send_message(ctx, new_msg).await?;
+    ctx.reply("OK").await?.delete(ctx).await?;
     Ok(())
 }
 
@@ -334,7 +350,8 @@ pub fn get_commands() -> Vec<Command<BotDB, Error>> {
         .type_setter = ore_point_type_setter;
 
     vec![
-        // init(),
+        init(),
+        test2(),
         set_notify(),
         list_points(),
         occupy_command,
