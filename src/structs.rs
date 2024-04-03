@@ -2,7 +2,7 @@ use crate::db::BotDB;
 use chrono::{DateTime, Utc};
 use once_cell::sync::OnceCell;
 use sqlx::prelude::FromRow;
-use std::fmt::Write;
+use std::{fmt::Write};
 
 #[derive(PartialEq, Eq, Clone, Debug, FromRow)]
 pub(crate) struct OreType {
@@ -79,6 +79,11 @@ impl ListResult {
                 let _ = write!(output, "<{}>", ore_type.emoji);
                 output
             })
+    }
+    pub fn first_emoji_id(&self) -> Option<u64> {
+        let emoji = OreType::iter().find(|ore_type| (ore_type.id & self.ore_type) != 0);
+        let emoji = emoji.and_then(|x| x.emoji.split(':').nth(2));
+        emoji.and_then(|x| x.parse().ok())
     }
 }
 

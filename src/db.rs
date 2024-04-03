@@ -196,6 +196,19 @@ impl BotDB {
         Ok(())
     }
 
+    pub async fn get_user_ocuppy_type(
+        &self,
+        guild_id: u64,
+        user_id: u64,
+    ) -> SqlResult<i32> {
+        let (ore_type,): (Option<i32>,) = sqlx::query_as("SELECT bit_or(ore_type) FROM occupy_table INNER JOIN ore_point ON occupy_table.ore_point_id = ore_point.id WHERE guild_id = $1 AND ( user_id = $2 OR battle_user_id = $2 )")
+            .bind(guild_id as i64)
+            .bind(user_id as i64)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(ore_type.unwrap_or(0))
+    }
+
     pub async fn begin_transaction(&self) -> SqlResult<Transaction<'_, Postgres>> {
         self.pool.begin().await
     }

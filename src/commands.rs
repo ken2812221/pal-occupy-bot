@@ -1,6 +1,5 @@
 use crate::{
     db::{BotDB, OccupyData},
-    interaction,
     structs::OrePoint,
 };
 use anyhow::{Context as _, Error, Result};
@@ -184,31 +183,31 @@ async fn force_occupy(
 }
 
 /// 列出所有的礦點
-#[poise::command(slash_command, rename = "礦點", ephemeral)]
-async fn list_points(
-    ctx: Context<'_>,
-    #[min = 1]
-    #[max = 20]
-    #[rename = "每頁礦點數量"]
-    #[description = "每頁礦點數量"]
-    page_size: Option<u32>,
-) -> Result<()> {
-    let db = ctx.data();
-    let guild_id = ctx.guild_id().context("err")?.get();
-    let page_size = page_size.unwrap_or(20);
+// #[poise::command(slash_command, rename = "礦點", ephemeral)]
+// async fn list_points(
+//     ctx: Context<'_>,
+//     #[min = 1]
+//     #[max = 20]
+//     #[rename = "每頁礦點數量"]
+//     #[description = "每頁礦點數量"]
+//     page_size: Option<u32>,
+// ) -> Result<()> {
+//     let db = ctx.data();
+//     let guild_id = ctx.guild_id().context("err")?.get();
+//     let page_size = page_size.unwrap_or(20);
 
-    let content = interaction::list(db, guild_id, 0, page_size).await?;
+//     let content = interaction::list(db, guild_id, 0, page_size).await?;
 
-    let reply = CreateReply::default()
-        .embed(content.embed)
-        .components(content.component)
-        .reply(true)
-        .ephemeral(true);
+//     let reply = CreateReply::default()
+//         .embed(content.embed)
+//         .components(content.component)
+//         .reply(true)
+//         .ephemeral(true);
 
-    ctx.send(reply).await?;
+//     ctx.send(reply).await?;
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 /// 列出所有的礦點
 #[poise::command(
@@ -280,7 +279,6 @@ impl Display for Mentionable {
 async fn init(ctx: Context<'_>) -> Result<()> {
     ctx.defer_ephemeral().await?;
     let button_row = vec![
-        CreateButton::new("occupy").label("佔領"),
         CreateButton::new("list").label("礦點佔領情形"),
     ];
     let result = ctx
@@ -353,7 +351,7 @@ pub fn get_commands() -> Vec<Command<BotDB, Error>> {
         init(),
         test2(),
         set_notify(),
-        list_points(),
+        // list_points(),
         occupy_command,
         force_occupy_command,
     ]
