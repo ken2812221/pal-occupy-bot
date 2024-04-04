@@ -1,8 +1,11 @@
 use std::vec;
 
-use crate::db::BotDB;
-use anyhow::{Context as _, Error, Ok};
-use chrono::Utc;
+use crate::{
+    db::{BotDB, OccupyData},
+    structs::OrePoint,
+};
+use anyhow::{Context as _, Error};
+use chrono::{Days, Utc};
 use poise::serenity_prelude::{
     self as serenity, ButtonStyle, Color, ComponentInteraction, ComponentInteractionCollector,
     CreateActionRow, CreateButton, CreateEmbed, CreateEmbedFooter, CreateInteractionResponse,
@@ -62,16 +65,16 @@ pub async fn list(
 
     let page_buttons = CreateActionRow::Buttons(vec![
         if page_index > 0 {
-            CreateButton::new(format!("list:{}:{}", page_index - 1, page_size))
+            CreateButton::new(format!("list_points:{}:{}", page_index - 1, page_size))
         } else {
             CreateButton::new("0").disabled(true)
         }
         .emoji('◀'),
-        CreateButton::new(format!("list:{}:{}", page_index, page_size))
+        CreateButton::new(format!("list_points:{}:{}", page_index, page_size))
             .emoji('🔄')
             .style(ButtonStyle::Success),
         if page_index + 1 < max_page {
-            CreateButton::new(format!("list:{}:{}", page_index + 1, page_size))
+            CreateButton::new(format!("list_points:{}:{}", page_index + 1, page_size))
         } else {
             CreateButton::new("0").disabled(true)
         }
@@ -124,7 +127,7 @@ impl InteractionController {
         };
         let args = &*args.split(':').collect::<Box<[_]>>();
         match command_name {
-            "list" => self.on_list_click(ci, args).await?,
+            "list_points" => self.list_points(ci, args).await?,
             "show_occupy" => {
                 self.show_target_ore_point_buttons(ShowType::Occupy, ci, args)
                     .await?
@@ -137,6 +140,7 @@ impl InteractionController {
                 self.show_target_ore_point_buttons(ShowType::Judge, ci, args)
                     .await?
             }
+            "occupy" => self.occupy(ci, args).await?,
             _ => anyhow::bail!("Unknown command"),
         }
         Ok(())
@@ -160,18 +164,21 @@ impl InteractionController {
         let start = page_index * page_size;
         let occupy_ore_type = db.get_user_ocuppy_type(guild_id, user_id).await?;
         let list_data = db.get_point_data(guild_id, start, page_size).await?;
-        let list_data = list_data
-            .into_iter()
-            .filter(|x| match t {
-                ShowType::Occupy => x.user_id.is_none() && (x.ore_type & occupy_ore_type) == 0,
-                ShowType::Challenge => {
-                    x.user_id.is_some()
-                        && x.due_time.is_some_and(|x| x < Utc::now())
-                        && x.battle_user_id.is_none()
-                        && (x.ore_type & occupy_ore_type) == 0
-                }
-                ShowType::Judge => x.user_id.is_some() && x.battle_user_id.is_some(),
-            });
+        let list_data = list_data.into_iter().filter(|x| match t {
+            ShowType::Occupy => x.user_id.is_none() && (x.ore_type & occupy_ore_type) == 0,
+            ShowType::Challenge => {
+                x.user_id.is_some()
+                    && x.due_time.is_some_and(|x| x < Utc::now())
+                    && x.battle_user_id.is_none()
+                    && (x.ore_type & occupy_ore_type) == 0
+            }
+            ShowType::Judge => x.user_id.is_some() && x.battle_user_id.is_some(),
+        });
+        let command_name = match t {
+            ShowType::Occupy => "occupy",
+            ShowType::Challenge => "challenge",
+            ShowType::Judge => "judge"
+        };
         let mut components = vec![];
         let mut current_row = vec![];
         for curr in list_data {
@@ -179,7 +186,7 @@ impl InteractionController {
                 components.push(CreateActionRow::Buttons(std::mem::take(&mut current_row)));
             }
             current_row.push(
-                CreateButton::new(format!("occupy:{}", curr.id))
+                CreateButton::new(format!("{}:{}:{}:{}", command_name, curr.id, page_index, page_size))
                     .label(format!("{} ({}, {})", curr.name, curr.x, curr.y))
                     .emoji(EmojiId::new(curr.first_emoji_id().context("no emoji id")?)),
             );
@@ -188,12 +195,16 @@ impl InteractionController {
             components.push(CreateActionRow::Buttons(std::mem::take(&mut current_row)));
         }
         components.push(CreateActionRow::Buttons(vec![CreateButton::new(format!(
-            "list:{}:{}",
+            "list_points:{}:{}",
             page_index, page_size
         ))
         .label("返回")
         .style(ButtonStyle::Secondary)]));
 
+        // ci.message
+        //     .clone()
+        //     .edit(&self.sc, EditMessage::new().components(components))
+        //     .await?;
         ci.create_response(
             &self.sc,
             CreateInteractionResponse::UpdateMessage(
@@ -205,7 +216,7 @@ impl InteractionController {
         Ok(())
     }
 
-    async fn on_list_click(&self, ci: &ComponentInteraction, args: &[&str]) -> Result {
+    async fn list_points(&self, ci: &ComponentInteraction, args: &[&str]) -> Result {
         let guild_id = ci.guild_id.context("No guild id")?.get();
 
         let is_admin = ci
@@ -218,9 +229,9 @@ impl InteractionController {
         match args {
             [""] => {
                 // New message
+                let list_data = list(&self.db, guild_id, 0, 20, is_admin).await?;
                 ci.create_response(&self.sc, CreateInteractionResponse::Acknowledge)
                     .await?;
-                let list_data = list(&self.db, guild_id, 0, 20, is_admin).await?;
                 ci.create_followup(
                     &self.sc,
                     CreateInteractionResponseFollowup::new()
@@ -246,6 +257,52 @@ impl InteractionController {
             }
             _ => (),
         }
+        Ok(())
+    }
+
+    async fn occupy(&self, ci: &ComponentInteraction, args: &[&str]) -> Result {
+        let point_id: i32 = args.first().context("no point_id argument")?.parse()?;
+
+        let guild_id = ci.guild_id.context("Missing guild id")?.get();
+        let user_id = ci.user.id.get();
+
+        let point = OrePoint::iter()
+            .find(|p| p.id == point_id)
+            .context("找不到礦點")?;
+
+        // begin transaction
+        let trans = self.db.begin_transaction().await?;
+
+        // 確認是否擁有同類礦點
+        if self
+            .db
+            .has_occupy_type(guild_id, user_id, point.ore_type)
+            .await?
+        {
+            // ci.create_response(&self.sc, CreateInteractionResponse::Acknowledge)
+            //     .await?;
+            ci.create_followup(
+                &self.sc,
+                CreateInteractionResponseFollowup::new()
+                    .ephemeral(true)
+                    .content("你已佔領同類礦點或已發起挑戰"),
+            )
+            .await?;
+            return Ok(());
+        }
+        self.db
+            .occupy(OccupyData {
+                ore_point_id: point_id,
+                guild_id,
+                user_id,
+                due_time: Utc::now()
+                    .checked_add_days(Days::new(14))
+                    .context("Failed to add days")?,
+                battle_user_id: None,
+            })
+            .await?;
+        trans.commit().await?;
+        self.list_points(ci, &args[1..]).await?;
         Ok(())
     }
 }

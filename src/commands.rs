@@ -279,7 +279,7 @@ impl Display for Mentionable {
 async fn init(ctx: Context<'_>) -> Result<()> {
     ctx.defer_ephemeral().await?;
     let button_row = vec![
-        CreateButton::new("list").label("礦點佔領情形"),
+        CreateButton::new("list_points").label("礦點佔領情形"),
     ];
     let result = ctx
         .channel_id()
