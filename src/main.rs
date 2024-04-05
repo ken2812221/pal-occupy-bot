@@ -44,7 +44,7 @@ async fn main(
             commands: commands::get_commands(),
             event_handler,
             on_error,
-            post_command: write_log,
+            pre_command: write_log,
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
