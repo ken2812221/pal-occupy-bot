@@ -177,7 +177,7 @@ impl InteractionController {
         let command_name = match t {
             ShowType::Occupy => "occupy",
             ShowType::Challenge => "challenge",
-            ShowType::Judge => "judge"
+            ShowType::Judge => "judge",
         };
         let mut components = vec![];
         let mut current_row = vec![];
@@ -186,9 +186,12 @@ impl InteractionController {
                 components.push(CreateActionRow::Buttons(std::mem::take(&mut current_row)));
             }
             current_row.push(
-                CreateButton::new(format!("{}:{}:{}:{}", command_name, curr.id, page_index, page_size))
-                    .label(format!("{} ({}, {})", curr.name, curr.x, curr.y))
-                    .emoji(EmojiId::new(curr.first_emoji_id().context("no emoji id")?)),
+                CreateButton::new(format!(
+                    "{}:{}:{}:{}",
+                    command_name, curr.id, page_index, page_size
+                ))
+                .label(format!("{} ({}, {})", curr.name, curr.x, curr.y))
+                .emoji(EmojiId::new(curr.first_emoji_id().context("no emoji id")?)),
             );
         }
         if !current_row.is_empty() {
@@ -279,13 +282,13 @@ impl InteractionController {
             .has_occupy_type(guild_id, user_id, point.ore_type)
             .await?
         {
-            // ci.create_response(&self.sc, CreateInteractionResponse::Acknowledge)
-            //     .await?;
-            ci.create_followup(
+            ci.create_response(
                 &self.sc,
-                CreateInteractionResponseFollowup::new()
-                    .ephemeral(true)
-                    .content("你已佔領同類礦點或已發起挑戰"),
+                CreateInteractionResponse::Message(
+                    CreateInteractionResponseMessage::new()
+                        .ephemeral(true)
+                        .content("你已佔領同類礦點或已發起挑戰"),
+                ),
             )
             .await?;
             return Ok(());
