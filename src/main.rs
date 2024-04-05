@@ -73,6 +73,15 @@ impl Handler {
         let Interaction::Component(c) = interaction else {
             return Ok(());
         };
+        _ = self
+            .0
+            .write_log(
+                c.guild_id.map(|x| x.get()),
+                c.channel_id.get(),
+                c.user.id.get(),
+                &c.data.custom_id,
+            )
+            .await;
         let (page_index, page_size): (u32, u32) = c
             .data
             .custom_id
